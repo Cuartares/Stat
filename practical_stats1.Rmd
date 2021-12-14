@@ -1,0 +1,95 @@
+---
+title: "Statistics"
+author: "Federspiel Sven"
+date: '2021-11-19'
+output:
+  pdf_document: default
+  html_document: default
+---
+  
+```{r setup, include = FALSE}
+install.packages("quantmod")
+install.packages("goft")
+install.packages("fitdistrplus")
+install.packages("fitdistrplus")
+library(quantmod)
+library(tidyverse)
+library(goft)
+library(fitdistrplus)
+```
+  
+
+
+
+## Import data
+
+Command to retrieve data from yahoo finance, returns a time series object.
+
+```{r}
+getSymbols("AAPL", from = "2017-8-27", to = "2017-11-27", auto.assign = TRUE)
+
+close <- AAPL$AAPL.Close
+open <- AAPL$AAPL.Open
+price <- AAPL$AAPL.Close
+```
+
+
+## Normalizing
+
+```{r}
+for (i in 0:length(close)){
+  price[i] <- close[i]/open[i]
+}
+
+```
+
+
+## extracting a numeric vector.
+
+```{r}
+x <- data.frame(coredata(price))
+```
+
+## Statistics.
+
+Looking at empirical data and fitting a lnorm density curve to it.
+It uses the MLE.
+
+```{r}
+plotdist(x$AAPL.Close, histo=TRUE, demp = TRUE)
+fun1 <- fitdist(x$AAPL.Close, "lnorm")
+plot(fun1)
+```
+
+Note : I expect these kind of figures to appear in the presentation, aswell
+as a table with the test results from the next command
+
+## testing log normality
+
+(let's say we want p>0.1), if p is smaller we reject the
+Lognormal hyp.
+
+```{r}
+lnorm_test(x$AAPL.Close)
+```
+
+## things to do and discuss
+
+Selecting the stocks (as we are considering growth stocks I think taking the
+top stocks from the nasdaq, maybe we can also check how indexes behave), also
+we need to choose a number of stocks to work on 
+
+Here we deal with day to day data, it would be nice to do the same with weekly
+and or monthly data (either find a way to directly get the data from quantmod
+or play with the indices from the day to day data.)
+
+in the fitdistrplus package there's a goodness of fit command that would be
+interesting to use, we shall have a look into it
+
+Still some blabla to do for the introduction and structure of the presentation
+we will discuss it in person.
+
+priority is to check the fitdistrplus package and the last paper from section
+4 till the end so you know what to expect. Also Im not even sure if the
+way i normalize is correct, it seems natural but if you have anything against
+or to add please do.
