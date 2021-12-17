@@ -1,0 +1,317 @@
+---
+title: "Testing Nasdaq 100 stocks prices for log-normality"
+author: "Federspiel Sven"
+date: '2021-11-19'
+output:
+  pdf_document: default
+  html_document: default
+---
+  
+```{r setup, include = FALSE}
+#install.packages("quantmod")
+#install.packages("goft")
+#install.packages("fitdistrplus")
+#install.packages("tidyquant")
+#install.packages("corrplot")
+#install.packages("ggplot2")
+library(tidyquant)
+library(quantmod)
+library(tidyverse)
+library(goft)
+library(fitdistrplus)
+library(corrplot)
+library(ggplot2)
+```
+  
+# Introduction
+
+As the dataset choice was ours, we decided to select financial data, namely stock
+prices. On one hand, it allowed us to manipulate a relevant data set opposed to
+artificial ones we have often encountered as exercises. On the other hand, a
+significant part of the work had to be dedicated to retrieve data efficiently,
+as well as constructing a tidy collection of data.
+A natural question that one could raise is: "Do stocks prices follow a known 
+distribution?". Inquiring on that matter lead us to a common assumption on stock
+prices, that is their log-normality, whence the title of our presentation.
+The structure shall consist of the following. First a detailed explanation on data
+selection and the resulting dataset. Subsequently, a quick word on the log-normal 
+distribution and its parameters. We will then exhibit a simulation of log-normal
+stock prices in order to get insight on our expectations. Subsequently, we will
+proceed with our testing protocol and the results. Afterwards, a discussion on
+the flaws of the model and how we could have improved the procedure. At last, we
+will briefly introduce the implications of such an assumption and present the 
+resources we used to implement our test.
+
+
+
+# DATA
+
+## Selection
+
+In order to model stock prices, we chose growth stocks. A convenient index for
+such companies is the Nasdaq 100. It provides a decent sized sample of high
+trading volume stocks. We were interested in recent yearly data, as the covid-19
+situation could highlight interesting flaws to our model. Thus, we selected a 
+three years span, from January 2018 to December 2020.
+Some companies from the index did not exist in 2018, some changed names. To be
+consistent with our companies choice, we removed those and ended up with 93
+stocks. 
+We exclusively considered the closing price and imported the data from Yahoo
+Finance.
+
+## Importing & tidying data
+
+In order to retrieve data for a given ticker, the $getSymbols$ command from the
+Quantmod package turned out to be useful. It retrieves data from Yahoo by
+default. To optimize data import, we used the $map$ command from Purrr to apply
+each ticker to our functions. We cleaned the data to obtain a data frame
+containing closing price only.
+
+```{r Importing data}
+GetData2020 <- function(x) {getSymbols(x,
+                                       from = "2020-01-01",
+                                       to = "2020-12-31",
+                                       auto.assign = FALSE)}
+GetData2019 <- function(x) {getSymbols(x,
+                                       from = "2019-01-01",
+                                       to = "2019-12-31",
+                                       auto.assign = FALSE)}
+GetData2018 <- function(x) {getSymbols(x,
+                                       from = "2018-01-01",
+                                       to = "2018-12-31",
+                                       auto.assign = FALSE)}
+GetData_span <- function(x) {getSymbols(x,
+                                       from = "2018-01-01",
+                                       to = "2020-12-31",
+                                       auto.assign = FALSE)}
+
+tickers <- c("ATVI","ADBE","AMD","ALGN","GOOGL","GOOG","AMZN","AEP","AMGN","ADI","ANSS","AAPL",
+"AMAT","ASML","TEAM","ADSK","ADP","BIDU","BIIB","BKNG","AVGO","CDNS","CDW","CERN",
+"CHTR","CHKP","CTAS","CSCO","CTSH","CMCSA","CPRT","COST","CSX","DXCM",
+"DLTR","EBAY","EA","EXC","FAST","FISV","GILD","HON","IDXX","ILMN","INCY",
+"INTC","INTU","ISRG","JD","KDP","KLAC","KHC","LRCX","LULU","MAR","MRVL","MTCH","MELI",
+"FB","MCHP","MU","MSFT","MDLZ","MNST","NTES","NFLX","NVDA","NXPI","ORLY","OKTA",
+"PCAR","PAYX","PYPL","PEP","QCOM","REGN","ROST","SGEN","SIRI","SWKS","SPLK",
+"SBUX","SNPS","TMUS","TSLA","TXN","TCOM","VRSN","VRSK","WBA","WDAY","XEL","XLNX")
+
+
+prices_2020 <- map(tickers, GetData2020) %>% map(Cl) %>% reduce(merge.xts)
+prices_2019 <- map(tickers, GetData2019) %>% map(Cl) %>% reduce(merge.xts)
+prices_2018 <- map(tickers, GetData2018) %>% map(Cl) %>% reduce(merge.xts)
+prices_span <- map(tickers, GetData_span) %>% map(Cl) %>% reduce(merge.xts)
+
+names(prices_2020) <- tickers
+names(prices_2019) <- tickers
+names(prices_2018) <- tickers
+names(prices_span) <- tickers
+
+
+```
+
+
+```{r Transform time series into df}
+prices_2020 <- as.data.frame(prices_2020)
+prices_2019 <- as.data.frame(prices_2019)
+prices_2018 <- as.data.frame(prices_2018)
+prices_span <- as.data.frame(prices_span)
+
+
+```
+
+## Normalization
+
+Comparing different stocks required a normalization, it was done using the
+price at day one.
+
+```{r Normalization}
+### Dividing every closing price of a stock by its price on January 1st
+for (j in 1:length(prices_2020[1,])){
+  for (i in 2:length(prices_2020[,1])){
+    prices_2020[i,j] <- prices_2020[i,j]/prices_2020[1,j]
+  }
+}
+
+for (j in 1:length(prices_2019[1,])){
+  for (i in 2:length(prices_2019[,1])){
+    prices_2019[i,j] <- prices_2019[i,j]/prices_2019[1,j]
+  }
+}
+
+for (j in 1:length(prices_2018[1,])){
+  for (i in 2:length(prices_2018[,1])){
+    prices_2018[i,j] <- prices_2018[i,j]/prices_2018[1,j]
+  }
+}
+
+for (j in 1:length(prices_span[1,])){
+  for (i in 2:length(prices_span[,1])){
+    prices_span[i,j] <- prices_span[i,j]/prices_span[1,j]
+  }
+}
+### Setting the January 1st value to 1.
+for (i in 1:length(prices_2020[1,])){
+  prices_2020[1,i] <- 1
+  prices_2019[1,i] <- 1
+  prices_2018[1,i] <- 1
+  prices_span[1,i] <- 1
+}
+
+
+```
+# Log-normal distribution
+
+
+# Simulation
+
+# Testing protocol
+
+## Plotting empirical densities and cumulative distribution
+
+First, we shall inspect the empirical density and the cumulative distribution.
+If the following graphs indeed have a log-normal shape, it will make sense to
+pursue further investigations on the assumption that our data is log-normal.
+
+```{r}
+EndOfYear_2020 <- as.numeric(prices_2020[252,])
+EndOfYear_2019 <- as.numeric(prices_2019[251,])
+EndOfYear_2018 <- as.numeric(prices_2018[250,])
+EndOfYear_span <- as.numeric(prices_span[755,])
+
+plotdist(EndOfYear_2018, histo=TRUE, demp = TRUE)
+plotdist(EndOfYear_2019, histo=TRUE, demp = TRUE)
+plotdist(EndOfYear_2020, histo=TRUE, demp = TRUE)
+plotdist(EndOfYear_span, histo=TRUE, demp = TRUE)
+## here we should do a dynamic ggplot of the density over the year
+```
+
+At first glance, the results seem decent. Although some stocks did outperform 
+and are quite isolated from the bulk of the data, one still observes a right-skewed
+distribution.
+
+
+## Testing for log-normality
+
+The next step is to test the data for log-normality. The hypothesis $H_0$ is
+denoted by "The data follows a log-normal distribution", the alternative is
+obviously that it does not follow such a distribution. We decided to test for
+$\alpha=0.01$. To do so, we tested the prices at the end of each year and after
+three years.
+
+Testing for log-normality is rather simple, it suffices to test the natural 
+logarithm of the data for normality. We used the $lnorm\_test()$ command from the
+Goft package that transforms the data, then apply a Shapiro-Wilk test for
+normality.
+
+```{r}
+
+lnorm_test(EndOfYear_2018)
+lnorm_test(EndOfYear_2019) 
+lnorm_test(EndOfYear_2020)
+lnorm_test(EndOfYear_span)
+
+```
+### Observations
+
+We can confidently reject $H_0$ for the years 2018 and 2019. However, we could
+not reject the log-normal assumption for 2019 or the three year span. Let us now
+have a closer look into our data by fitting a log-normal curve to it and perform
+additional investigations on Q-Q and P-P plots. 
+The $fitdist$ command from the Fitdistrplus package does it using the maximum
+likelihood by default. Moreover, plotting the command also returns figures 
+required for further analysis.
+
+## Further testing.
+
+
+```{r}
+
+graph_2018 <- fitdist(EndOfYear_2018, "lnorm")
+plot(graph_2018)
+
+
+graph_2019 <- fitdist(EndOfYear_2019, "lnorm")
+plot(graph_2019)
+
+
+graph_2020 <- fitdist(EndOfYear_2020, "lnorm")
+plot(graph_2020)
+
+
+graph_span <- fitdist(EndOfYear_span, "lnorm")
+plot(graph_span)
+
+
+summary(graph_2019)
+summary(graph_span)
+```
+### Observations
+
+The figures above now give a clear explanation on why the log-normal test failed
+for the years 2018 and 2020. Some stocks over-performed and are impacting greatly
+the test results.
+
+## Conclusion
+
+We conclude that in general, on yearly intervals, the Nasdaq 100 stocks do not
+follow a log-normal distribution. However, it seems that the majority of data is
+well modeled, while few stocks completely ruin the log-normal assumption.
+We also remark that the covid-19 situation did not have a noticeable impact on 
+our testing procedure, as the 2020 figures are quite similar to the previous years.
+
+# Flaws of the model and possible improvements
+
+## Underestimation of the right tail
+
+As stated during the observation of the Q-Q plots, the over-performing stocks
+are not well integrated into the model. To illustrate this flaw of the model,
+let us have a look at the same testing procedure on the year 2020 where we
+removed the best performing stock.
+
+```{r}
+
+modifiedEoY_2020 <- EndOfYear_2020[EndOfYear_2020 < max(EndOfYear_2020)]
+
+mod_graph_2020 <- fitdist(modifiedEoY_2020, "lnorm")
+plot(mod_graph_2020)
+
+lnorm_test(modifiedEoY_2020)
+```
+As expected, it has a tremendous effect on the model. Particularly on the
+log-normality testing, where the p-value attains 0.9276.
+
+## Sample size and time intervals
+
+Our testing procedure can be improved with a larger sample. Considering an index
+as the Russell 3000 would yield more comprehensive result for US stocks. 
+Additionally, by testing different time intervals, one shall obtain better
+insight on stocks price behavior.
+
+## Dependence of the stocks
+
+```{r}
+prices <- as.matrix(prices_span)
+corrplot(cor(prices), method = "number")
+cor(prices)
+
+## too much tickers, need a better way to visualize dependence, altough predominance of pos. cor. stocks is observable
+```
+
+
+# Consequences of the log-normal assumption
+
+## Log-normal random walk
+
+Put here some words from the article you sent me
+
+## Black-Scholes model
+
+The log-normal assumption on stock prices is the key assumption of the
+Black-Scholes model. This model and its variations are widely used in option
+pricing.
+
+# References
+
+Reproducible Finance with R, Jonathan K. Regenstein, Jr.
+
+
+
